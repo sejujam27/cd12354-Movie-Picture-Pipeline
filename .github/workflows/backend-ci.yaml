@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: starter/backend
-        run: pipenv install
+        run: pipenv install --dev
 
       - name: Run lint
         working-directory: starter/backend
@@ -53,7 +53,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: starter/backend
-        run: pipenv install
+        run: pipenv install --dev
 
       - name: Run tests
         working-directory: starter/backend
@@ -81,7 +81,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: starter/backend
-        run: pipenv install
+        run: pipenv install --dev
 
       - name: Run tests
         working-directory: starter/backend
