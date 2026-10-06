@@ -1,0 +1,106 @@
+name: Backend Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'starter/backend/**'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: 972647051317.dkr.ecr.us-east-1.amazonaws.com/backend
+  EKS_CLUSTER_NAME: cluster
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Install Pipenv
+        run: python -m pip install pipenv
+
+      - name: Install dependencies
+        run: pipenv install --dev
+
+      - name: Lint
+        run: pipenv run lint
+
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starter/backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+
+      - name: Install Pipenv
+        run: python -m pip install pipenv
+
+      - name: Install dependencies
+        run: pipenv install --dev
+
+      - name: Test
+        run: pipenv run test
+
+  build:
+    needs:
+      - lint
+      - test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        run: docker build --tag "${ECR_REPOSITORY}:${GITHUB_SHA}" starter/backend
+
+      - name: Push Docker image
+        run: docker push "${ECR_REPOSITORY}:${GITHUB_SHA}"
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+
+      - name: Prepare Kubernetes manifests
+        run: |
+          mkdir -p /tmp/backend-k8s
+          cp starter/backend/k8s/kustomization.yaml /tmp/backend-k8s/
+          cp starter/backend/k8s/deployment.yaml /tmp/backend-k8s/
+          cp starter/backend/k8s/service.yaml /tmp/backend-k8s/
+          sed -i "s#image: backend#image: ${ECR_REPOSITORY}:${GITHUB_SHA}#" /tmp/backend-k8s/deployment.yaml
+
+      - name: Deploy with Kustomize
+        run: kubectl kustomize /tmp/backend-k8s | kubectl apply -f -
+
+      - name: Verify deployment
+        run: kubectl rollout status deployment/backend --timeout=180s
